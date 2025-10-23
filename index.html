@@ -629,18 +629,44 @@
     </style>
 </head>
 <body>
-    <!-- Video Intro -->
-    <div class="video-intro" id="videoIntro">
-        <div class="video-wrapper">
-            <iframe 
-                src="https://www.youtube.com/embed/Xr5wbI6Dyf4?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&modestbranding=1&playsinline=1" 
-                frameborder="0" 
-                allow="autoplay; fullscreen" 
-                allowfullscreen>
-            </iframe>
-        </div>
-        <button class="skip-intro-btn" id="skipBtn">Skip Intro →</button>
-    </div>
+    <!-- === INTRO OVERLAY (debug version) === -->
+<div id="intro-splash" style="position:fixed;inset:0;z-index:9999;background:#000;display:grid;place-items:center;opacity:1;transition:opacity .6s ease">
+  <video id="intro-video"
+         autoplay
+         muted
+         playsinline
+         preload="auto"
+         controls   <!-- DEBUG ONLY: remove after everything works -->
+         style="width:100vw;height:100vh;object-fit:cover;display:block;background:#000">
+    <!-- IMPORTANT: keep MP4 (H.264 + AAC). WebM is optional. Filenames are case-sensitive on GitHub Pages. -->
+    <source src="images/intro.mp4"  type="video/mp4">
+    <source src="images/intro.webm" type="video/webm">
+  </video>
+
+  <!-- Fallback button shown only if autoplay is blocked -->
+  <button id="enter-site"
+          aria-label="Enter site"
+          style="position:absolute;display:none;padding:12px 18px;border-radius:999px;cursor:pointer;
+                 right:24px;bottom:24px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.25);
+                 backdrop-filter:blur(6px);font:600 15px/1 system-ui,sans-serif">
+    Tap to Enter
+  </button>
+
+  <!-- Optional skip -->
+  <button id="skip-intro"
+          aria-label="Skip intro"
+          style="position:absolute;right:24px;top:24px;padding:10px 14px;background:rgba(0,0,0,.55);
+                 color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:999px;backdrop-filter:blur(6px);cursor:pointer">
+    Skip
+  </button>
+
+  <!-- Tiny on-screen debug console -->
+  <div id="intro-debug"
+       style="position:absolute;left:12px;bottom:12px;max-width:60vw;font:12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+              background:rgba(0,0,0,.5);color:#ddd;padding:8px 10px;border:1px solid rgba(255,255,255,.2);border-radius:8px;white-space:pre-wrap"></div>
+</div>
+<!-- === /INTRO OVERLAY === -->
+
 
     <!-- Navigation -->
     <nav id="navbar">
@@ -917,5 +943,66 @@
             observer.observe(card);
         });
     </script>
+    <script>
+(function () {
+  const splash = document.getElementById('intro-splash');
+  const video  = document.getElementById('intro-video');
+  const skip   = document.getElementById('skip-intro');
+  const enter  = document.getElementById('enter-site');
+  const dbg    = document.getElementById('intro-debug');
+
+  const log = (msg) => { if (dbg) dbg.textContent += (dbg.textContent ? "\n" : "") + msg; };
+  const evs = ["loadstart","loadedmetadata","loadeddata","canplay","canplaythrough","play","playing","pause","ended","stalled","suspend","waiting","error","abort"];
+  evs.forEach(e => video.addEventListener(e, () => log(`[${new Date().toLocaleTimeString()}] ${e}`)));
+
+  function fadeOut() {
+    splash.style.opacity = '0';
+    splash.style.pointerEvents = 'none';
+    setTimeout(() => splash.remove(), 700);
+  }
+
+  function revealOnEndOrTimeout() {
+    video.addEventListener('ended', fadeOut, { once: true });
+    // safety: if nothing plays within 8s, reveal site
+    setTimeout(() => { if (video.paused || video.readyState < 2) fadeOut(); }, 8000);
+  }
+
+  async function tryAutoplay() {
+    try {
+      const p = video.play();
+      if (p && typeof p.then === 'function') await p;
+      // started playing → hide fallback, remove debug controls
+      enter.style.display = 'none';
+      video.removeAttribute('controls'); // remove DEBUG control once playback is live
+      revealOnEndOrTimeout();
+    } catch (err) {
+      log(`Autoplay blocked or failed: ${err && err.message ? err.message : err}`);
+      enter.style.display = 'block';
+      enter.addEventListener('click', async () => {
+        try {
+          await video.play();
+          enter.style.display = 'none';
+          video.removeAttribute('controls');
+          revealOnEndOrTimeout();
+        } catch (e) {
+          log(`Manual play failed: ${e && e.message ? e.message : e}`);
+          fadeOut(); // don’t trap the user
+        }
+      }, { once: true });
+    }
+  }
+
+  // If the MP4 path is wrong, you'll see "error" and no "loadedmetadata".
+  if (video.readyState >= 2) {
+    tryAutoplay();
+  } else {
+    video.addEventListener('loadeddata', tryAutoplay, { once: true });
+    setTimeout(tryAutoplay, 1500);
+  }
+
+  skip && skip.addEventListener('click', fadeOut);
+})();
+</script>
+
 </body>
 </html>
